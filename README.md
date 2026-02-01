@@ -1,3 +1,14 @@
+---
+title: DSP Visualization
+emoji: 📶
+colorFrom: blue
+colorTo: red
+sdk: docker
+sdk_version: 3.0.0
+app_file: app.py
+pinned: true
+---
+
 # DSPVis - Digital Signal Processing Visualization
 
 A web-based application for visualizing and exploring digital signal processing (DSP) concepts interactively. Built with Dash and Plotly, DSPVis provides an intuitive interface for understanding complex DSP operations through real-time visualization.

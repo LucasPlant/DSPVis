@@ -30,9 +30,9 @@ class SliderParams:
 FREQ_PARAMS = SliderParams(0.1, 10, 1, 0.1, '(Hz)')
 AMPLITUDE_PARAMS = SliderParams(-10, 10, 1.0, 0.1, '')
 PHASE_PARAMS = SliderParams(-180, 180, 0, 1, '(deg)')
-TIME_HORIZON_PARAMS = SliderParams(0.1, 20, 2, 0.1, '(s)')
+TIME_HORIZON_PARAMS = SliderParams(0.1, 20, 5, 0.1, '(s)')
 SAMPLE_RATE_PARAMS = SliderParams(0.1, 100, 10, 0.1, '(Hz)')
-WINDOW_LENGTH_PARAMS = SliderParams(1, 500, 10, 1, '(samples)')
+WINDOW_LENGTH_PARAMS = SliderParams(0.01, 5, 1.0, 0.01, '(s)')
 
 MAX_SINUSOIDS = 4
 DTFT_ZERO_PAD_FACTOR = 100
@@ -230,7 +230,7 @@ def create_left_column() -> html.Div:
                         )
                     ], style={'marginBottom': '20px'}),
                     
-                    create_input_with_slider('window-length', 'Window Length', WINDOW_LENGTH_PARAMS),
+                    create_input_with_slider('window-length', 'Window Duration', WINDOW_LENGTH_PARAMS),
                     
                 ], style=CARD_STYLE),
         ], style={
@@ -277,6 +277,13 @@ def create_right_column() -> html.Div:
                     'marginBottom': '15px',
                     'fontSize': '1.2rem',
                 }),
+                dcc.Checklist(
+                    id='toggle-dtft-windowed',
+                    options=[{'label': 'Show DTFT (zero-padded)', 'value': 'show'}],
+                    value=['show'],
+                    inputStyle={'marginRight': '8px'},
+                    style={'color': '#ffffff', 'marginBottom': '10px'}
+                ),
                 dcc.Graph(id='windowed-signal-plots', style={'height': '500px'}),
             ], style=CARD_STYLE),
         ], style={
@@ -386,7 +393,7 @@ def get_default_params():
         'time_horizon': TIME_HORIZON_PARAMS.default,
         'sample_rate': SAMPLE_RATE_PARAMS.default,
         'window_type': 'Rectangular',
-        'window_length': int(WINDOW_LENGTH_PARAMS.default),
+        'window_duration': WINDOW_LENGTH_PARAMS.default,
     }
 
 def parse_sinusoid_inputs(num_sinusoids):
@@ -521,7 +528,7 @@ def update_data_store(num_sinusoids, window_type, time_horizon, sample_rate, win
         'time_horizon': time_horizon if time_horizon is not None else defaults['time_horizon'],
         'sample_rate': sample_rate if sample_rate is not None else defaults['sample_rate'],
         'window_type': window_type if window_type is not None else defaults['window_type'],
-        'window_length': int(window_length) if window_length is not None else defaults['window_length'],
+        'window_duration': window_length if window_length is not None else defaults['window_duration'],
     }
     
     return params
@@ -577,8 +584,8 @@ def update_signal_plots(params):
     
     # For discrete signal
     discrete_time_fourier_transform = np.fft.fft(signal_discrete_extended, len(signal_discrete_extended))
-    # discrete_time_fourier_transform_freqs = np.fft.fftfreq(len(signal_discrete_extended)) # -pi to pi normalized
-    discrete_time_fourier_transform_freqs = np.linspace(-np.pi, np.pi, len(discrete_time_fourier_transform))
+    discrete_time_fourier_transform_freqs = np.fft.fftshift(np.fft.fftfreq(len(signal_discrete_extended), 1)) * 2 * np.pi  # -pi to pi normalized
+    # discrete_time_fourier_transform_freqs = np.linspace(-np.pi, np.pi, len(discrete_time_fourier_transform))
     
     # Create subplot figure
     fig = make_subplots(
@@ -672,8 +679,13 @@ def update_signal_plots(params):
     fig.update_xaxes(title_text='Time (s)', row=1, col=1)
     fig.update_xaxes(title_text='Frequency (Hz)', row=1, col=2)
     fig.update_xaxes(title_text='Time (s)', row=2, col=1)
-    fig.update_xaxes(title_text='Frequency (Hz)', row=2, col=2)
-    
+    fig.update_xaxes(
+        title_text='Frequency (Rad)',
+        row=2, col=2,
+        range=[-np.pi, np.pi],
+        tickvals=[-np.pi, 0, np.pi],
+        ticktext=['-π', '0', 'π']
+    )    
     fig.update_yaxes(title_text='Amplitude', row=1, col=1)
     fig.update_yaxes(title_text='Magnitude', row=1, col=2)
     fig.update_yaxes(title_text='Amplitude', row=2, col=1)
@@ -692,20 +704,24 @@ def update_window_plots(params):
         params = get_default_params()
     
     window_type = params['window_type']
-    window_length = params['window_length']
+    sample_rate = params['sample_rate']
+    window_duration = params['window_duration']
+    window_length = max(1, int(round(window_duration * sample_rate * OVERSAMPLE_FACTOR)))
+    t = np.linspace(0, window_duration*2, window_length*2, endpoint=False)
+    window_disp = np.zeros_like(t)
     
     # Generate window
-    window, _ = get_window_function(window_type, window_length)
-    n = np.arange(window_length)
+    window, main_lobe_width = get_window_function(window_type, window_length)
+    window_disp[:window_length] = window  # For time domain display
     
     # Compute DTFT of window
-    n_fft = len(window) * DTFT_ZERO_PAD_FACTOR
-    window_spectrum = np.fft.fft(window, n=n_fft)
-    freqs = np.fft.fftfreq(n_fft)
-    
-    # Shift for centered view
-    window_spectrum = np.fft.fftshift(window_spectrum)
-    freqs = np.fft.fftshift(freqs)
+    window_spectrum = np.fft.fftshift(np.fft.fft(window, n=window_length * DTFT_ZERO_PAD_FACTOR))
+    freqs = np.fft.fftshift(np.fft.fftfreq(len(window_spectrum), 1/(sample_rate * OVERSAMPLE_FACTOR)))
+
+    # Keep only 10x main lobe for plotting
+    freq_mask = np.abs(freqs) <= (main_lobe_width * (sample_rate * OVERSAMPLE_FACTOR))
+    window_spectrum = window_spectrum[freq_mask]
+    freqs = freqs[freq_mask]
     
     # Create figure
     fig = make_subplots(
@@ -720,9 +736,9 @@ def update_window_plots(params):
     # Time domain - stem plot
     fig.add_trace(
         go.Scatter(
-            x=n,
-            y=window,
-            mode='markers+lines',
+            x=t,
+            y=window_disp,
+            mode='lines',
             name='w[n]',
             line={'color': '#ffaa00', 'width': 1},
             marker={'color': '#ffaa00', 'size': 5}
@@ -735,7 +751,7 @@ def update_window_plots(params):
     
     fig.add_trace(
         go.Scatter(
-            x=freqs * window_length,  # Normalize to show in terms of bins
+            x=freqs,
             y=magnitude_db,
             mode='lines',
             name='|W(f)| dB',
@@ -751,8 +767,8 @@ def update_window_plots(params):
         height=400,
     )
     
-    fig.update_xaxes(title_text='Sample (n)', row=1, col=1)
-    fig.update_xaxes(title_text='Normalized Frequency (bins)', row=1, col=2, range=[-window_length/2, window_length/2])
+    fig.update_xaxes(title_text='Time (s)', row=1, col=1)
+    fig.update_xaxes(title_text='Frequency (Hz)', row=1, col=2)
     fig.update_yaxes(title_text='Amplitude', row=1, col=1)
     fig.update_yaxes(title_text='Magnitude (dB)', row=1, col=2, range=[-100, 5])
     
@@ -763,8 +779,9 @@ def update_window_plots(params):
 @callback(
     Output('windowed-signal-plots', 'figure'),
     Input('signal-data-store', 'data'),
+    Input('toggle-dtft-windowed', 'value'),
 )
-def update_windowed_signal_plots(params):
+def update_windowed_signal_plots(params, dtft_toggle):
     if params is None:
         params = get_default_params()
     
@@ -773,7 +790,7 @@ def update_windowed_signal_plots(params):
     time_horizon = params['time_horizon']
     sample_rate = params['sample_rate']
     window_type = params['window_type']
-    window_length = params['window_length']
+    window_duration = params['window_duration']
     
     # Generate signals
     t_discrete = np.arange(0, time_horizon, 1/sample_rate)
@@ -793,22 +810,27 @@ def update_windowed_signal_plots(params):
         signal_discrete += amp * np.sin(2 * np.pi * freq * t_discrete + phase_rad)
     
     # Apply window to beginning of signal
-    window_discrete, _ = get_window_function(window_type, min(window_length, len(signal_discrete)))
-    window_continuous, main_lobe_width_continuous = get_window_function(window_type, min(window_length * OVERSAMPLE_FACTOR, len(signal_continuous)))
+    window_discrete, _ = get_window_function(window_type, min(int(window_duration * sample_rate), len(signal_discrete)))
+    window_continuous, main_lobe_width_continuous = get_window_function(window_type, min(int(window_duration * sample_rate * OVERSAMPLE_FACTOR), len(signal_continuous)))
     
     # Window signals - maintain full length, zero outside window
-    windowed_signal_discrete = np.zeros_like(signal_discrete)
-    windowed_signal_discrete[:len(window_discrete)] = signal_discrete[:len(window_discrete)] * window_discrete
+    windowed_signal_discrete = signal_discrete[:len(window_discrete)] * window_discrete
     windowed_signal_continuous = np.zeros_like(signal_continuous)
     windowed_signal_continuous[:len(window_continuous)] = signal_continuous[:len(window_continuous)] * window_continuous
     
     # Compute DFT of windowed signal
-    dtft = np.fft.fft(windowed_signal_discrete)
-    # freqs_discrete_fourier_transform = np.fft.fftfreq(n_fft_dft, 1/sample_rate)
-    freqs_dtft = np.linspace(-np.pi, np.pi, len(dtft))
+    dft = np.fft.fftshift(np.fft.fft(windowed_signal_discrete))
+    freqs_dft = np.fft.fftshift(np.fft.fftfreq(len(dft), 1)) * 2 * np.pi  # -pi to pi
+    # freqs_dft = np.linspace(-np.pi, np.pi, len(dft))
+
+    dtft_enabled = bool(dtft_toggle) and 'show' in dtft_toggle
+    # Compute DTFT approximation via zero-padding
+    dtft_len = len(windowed_signal_discrete) * DTFT_ZERO_PAD_FACTOR
+    dtft = np.fft.fftshift(np.fft.fft(windowed_signal_discrete, n=dtft_len))
+    freqs_dtft = np.fft.fftshift(np.fft.fftfreq(dtft_len, 1)) * 2 * np.pi  # -pi to pi
     
     # Compute Fourier Transform of windowed signal (approx fourier transform)
-    fourier_transform = np.fft.fft(windowed_signal_continuous, len(windowed_signal_continuous) * 100) # TODO fix this
+    fourier_transform = np.fft.fft(windowed_signal_continuous, len(windowed_signal_continuous) * DTFT_ZERO_PAD_FACTOR)
     freqs_fourier_transform = np.fft.fftfreq(len(fourier_transform), 1/(sample_rate * OVERSAMPLE_FACTOR))
     
     # Create figure
@@ -818,7 +840,7 @@ def update_windowed_signal_plots(params):
             'Windowed Signal (Continuous Approx)',
             'Fourier Transform of Windowed Signal (approx)',
             'Windowed Signal (Discrete)',
-            'DTFT of Windowed Signal',
+            'DFT/DTFT of Windowed Signal',
         ),
         vertical_spacing=0.15,
         horizontal_spacing=0.12
@@ -878,17 +900,55 @@ def update_windowed_signal_plots(params):
         row=1, col=2
     )
     
-    fig.add_trace(
-        go.Scatter(
-            x=freqs_dtft,
-            y=np.abs(dtft),
-            mode='lines+markers',
-            name='DFT',
-            line={'color': '#ff66aa', 'width': 1},
-            marker={'color': '#ff66aa', 'size': 4}
-        ),
-        row=2, col=2
-    )
+    if dtft_enabled:
+        fig.add_trace(
+            go.Scatter(
+                x=freqs_dft,
+                y=np.abs(dft),
+                mode='markers',
+                name='DFT (sticks)',
+                line={'color': '#ff66aa', 'width': 1}
+            ),
+            row=2, col=2
+        )
+
+        # Add stem lines
+        for i, (t, y) in enumerate(zip(freqs_dft, np.abs(dft))):
+            if i < 500:  # Limit for performance
+                fig.add_trace(
+                    go.Scatter(
+                        x=[t, t],
+                        y=[0, y],
+                        mode='lines',
+                        line={'color': '#ff6088', 'width': 1},
+                        showlegend=False
+                    ),
+                    row=2, col=2
+                )
+
+        fig.add_trace(
+            go.Scatter(
+                x=freqs_dtft,
+                y=np.abs(dtft),
+                mode='lines',
+                name='DTFT (zero-padded)',
+                line={'color': '#ffaa00', 'width': 1.5}
+            ),
+            row=2, col=2
+        )
+    else:
+
+        fig.add_trace(
+            go.Scatter(
+                x=freqs_dft,
+                y=np.abs(dft),
+                mode='lines+markers',
+                name='DFT',
+                line={'color': '#ff66aa', 'width': 1},
+                marker={'color': '#ff66aa', 'size': 4}
+            ),
+            row=2, col=2
+        )
     
     # Update layout
     fig.update_layout(
@@ -898,13 +958,23 @@ def update_windowed_signal_plots(params):
     )
     
     fig.update_xaxes(title_text='Time (ms)', row=1, col=1)
-    fig.update_xaxes(title_text='Time (ms)', row=1, col=2)
     fig.update_xaxes(title_text='Frequency (Hz)', row=2, col=1)
-    fig.update_xaxes(title_text='Frequency (Hz)', row=2, col=2)
+    fig.update_xaxes(title_text='Time (ms)', row=1, col=2)
+    fig.update_xaxes(
+        title_text='Frequency (Rad)',
+        row=2, col=2,
+        range=[-np.pi, np.pi],
+        tickvals=[-np.pi, 0, np.pi],
+        ticktext=['-π', '0', 'π']
+    )
     
     fig.update_yaxes(title_text='Amplitude', row=1, col=1)
     fig.update_yaxes(title_text='Amplitude', row=1, col=2)
     fig.update_yaxes(title_text='Magnitude', row=2, col=1)
-    fig.update_yaxes(title_text='Magnitude', row=2, col=2)
+    fig.update_yaxes(
+        title_text='Magnitude',
+        row=2, col=2,
+        range=[-0.1 * np.max(np.abs(dtft)), np.max(np.abs(dtft)) * 1.1]
+        )
     
     return fig

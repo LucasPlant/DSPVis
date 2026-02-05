@@ -6,6 +6,8 @@ A Dash-based web application for demonstrating DSP concepts.
 import dash
 from dash import Dash, html, dcc, page_container
 
+LOCAL = False
+
 # Initialize the Dash app with multi-page support
 app = Dash(
     __name__,
@@ -29,4 +31,7 @@ app.layout = html.Div([
 if __name__ == '__main__':
     import os
     port = int(os.getenv('PORT', 7860))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    if LOCAL:
+        app.run(debug=True, host='127.0.0.1', port=port)
+    else:
+        app.run(debug=False, host='0.0.0.0', port=port)

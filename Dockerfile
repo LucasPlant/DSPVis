@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
@@ -22,6 +22,8 @@ EXPOSE 7860
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
+ENV PORT=7860
 
-# Run the application with Gunicorn
-# CMD ["gunicorn", "--bind", "0.0.0.0:7860", "--workers", "2", "--worker-class", "sync", "--timeout", "60", "app:server"]
+# Run the application with Gunicorn; bind to the runtime PORT env var
+# Use a shell form so the ${PORT} variable is expanded at container start
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} --workers 2 --worker-class sync --timeout 60 app:server"]

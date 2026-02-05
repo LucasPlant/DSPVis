@@ -19,6 +19,30 @@ app = Dash(
     assets_folder='assets'
 )
 
+# Ensure the local CSS is explicitly linked and loaded after any external css
+# This helps prevent host/container CSS (e.g. Hugging Face injected styles)
+# from interfering with our layout by controlling load order and adding
+# a responsive viewport meta tag.
+app.index_string = '''<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <link rel="stylesheet" href="/assets/style.css">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>'''
+
 # Main layout with page container
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),

@@ -29,6 +29,9 @@ app.layout = html.Div([
     'minHeight': '100vh',
 })
 
+# Export the server for gunicorn/production deployment
+server = app.server
+
 if __name__ == '__main__':
     import os
     port = int(os.getenv('PORT', 7860))

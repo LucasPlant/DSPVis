@@ -23,5 +23,5 @@ EXPOSE 7860
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Run the application
-CMD ["python", "app.py"]
+# Run the application with Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:7860", "--workers", "2", "--worker-class", "sync", "--timeout", "60", "app:server"]

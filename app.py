@@ -15,7 +15,8 @@ app = Dash(
     suppress_callback_exceptions=True,
     external_stylesheets=[
         "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-    ]
+    ],
+    assets_folder='assets'
 )
 
 # Main layout with page container

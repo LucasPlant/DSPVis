@@ -30,7 +30,7 @@ app.layout = html.Div([
 })
 
 # Export the server for gunicorn/production deployment
-server = app.server
+# server = app.server
 
 if __name__ == '__main__':
     import os
